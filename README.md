@@ -37,8 +37,8 @@ When using the -f option and the --apachetime option the last time available in 
 
 Additional Information
 ---------
-Check the wiki for further examples of how to use resolve.
+Check the [wiki][3] for further examples of how to use resolve.
 
   [1]: http://www.gnu.org/licenses/gpl.html
   [2]: href="http://search.cpan.org/~mgrabnar/File-Tail-0.99.3/Tail.pm">FileTail
-
+  [3]:https://github.com/henri/resolve/wiki
