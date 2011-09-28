@@ -1,0 +1,299 @@
+#!/bin/bash
+
+# Resolves multiple doman names
+# and provides port 80 status
+#
+# Copyright 2007 Henri Shustak
+# Released under the GNU GPL
+# Lucid Information Systems
+# http://www.lucidsystems.org
+#
+# Version 0.8a
+
+
+## Varibles
+date_hash=`date | md5`                        
+current=""
+current_apache_visit_time=""
+not_found1="3(NXDOMAIN)"
+not_fount2="2(NXDOMIAN)"
+host_num=1
+resolved=""
+port80_status=""
+report_time_of_apache_visit="NO"
+re_enable_report_time_of_apache_visit="NO"
+check_port80="YES"
+print_line_numbers="YES"
+standard_in="YES"
+file_input="NO"
+input_file=""
+temp_unique_file="/tmp/resolve_temp_unique_$date_hash"
+temp_unique_file_with_apache_time="/tmp/resolve_temp_unique_with_apache_time_$date_hash"
+exit_status=0
+continue_processing_other_inputs_after_command_line_arguments="NO"
+command_line_arguments_processed="NO"
+
+#This only works with the -f option at the moment
+unique_resolution="YES"
+
+## Read Command Line Options
+
+NO_ARGS=0
+E_OPTERROR=65
+# Note : This is messed up you can not have short option within the long options. Also Long options must follow the -f option...
+while getopts  "\"-nolinenumbers\" \"-noport80check\" \"-noapachetime\" \"-nostandardin\" \"f:\"" option
+do
+	if [ "$option" != "-" ] ; then
+		option_word=${option_word}${option}
+	else
+		option_word=$option
+	fi
+   	case $option_word in
+	    	-nolinenumbers         ) print_line_numbers="NO";;
+    		-noport80check         ) check_port80="NO";;
+	        -apachetime            ) report_time_of_apache_visit="YES";;
+            -nostandardin	       ) standard_in="NO";;
+	        f          		       ) standard_in=NO;input_file="$OPTARG"; file_input="YES";;
+		#  otherwise it falls through to the default.
+        	*                      ) ;;   # DEFAULT : Do Nothing
+    	esac
+done
+shift $(($OPTIND - 1))
+
+#echo check_port80 : $check_port80
+#echo print_line_numbers : $print_line_numbers
+
+#echo input_file : $input_file
+#echo file_input : $file_input
+
+#exit 0
+
+
+
+
+## Functions
+function clean_exit {
+	if [ -f "$temp_unique_file" ] ; then
+		rm -f "$temp_unique_file"
+	fi
+	if [ -f "$temp_unique_file_with_apache_time" ] ; then
+	   rm -f "$temp_unique_file_with_apache_time"
+    fi
+	exit $exit_status
+}	
+
+function resolve_host {
+
+	# Attempts to Resovle the Host Name
+	resolved=`host $current 2>/dev/null | awk '{ print $5 }'`	
+	if [ "$resolved" == "" ] ; then
+		resolved=`host $current 2>/dev/null | awk '{ print $4 }' | tr '\n' '\t'`
+	else
+		resolved=`echo "$resolved" |  tr '\n' '\t'`
+	fi
+	
+	# Check if it was resolved
+	resolved1=`echo "$resolved" | cut -c 1-11`
+	if [ "$resolved1" == "$not_found1" ] || [ "$resolved" == "$not_found2" ]; then
+		resolved="WARNING! Unabled to resolve"
+	fi
+
+	# Process Command Line Options and Print the Apporpriate Information
+	if [ "$check_port80" == "YES" ] && [ "$print_line_numbers" == "YES" ] ; then
+		check_port80
+		if [ "$report_time_of_apache_visit" == "YES" ] ; then
+            echo -e "$host_num\t$current_apache_visit_time\t$port80_status\t$current\t$resolved"
+        else   
+            echo -e "$host_num\t$port80_status\t$current\t$resolved"
+        fi
+	else
+		if [ "$check_port80" != "YES" ] && [ "$print_line_numbers" == "YES" ] ; then
+            if [ "$report_time_of_apache_visit" == "YES" ] ; then
+                echo -e "$host_num\t$current_apache_visit_time\t$current\t$resolved"
+            else	
+                echo -e "$host_num\t$current\t$resolved"
+            fi
+		else
+			if [ "$check_port80" == "YES" ] && [ "$print_line_numbers" != "YES" ] ; then
+				check_port80
+                if [ "$report_time_of_apache_visit" == "YES" ] ; then				
+                    echo -e "$current_apache_visit_time\t$port80_status\t$current\t$resolved"
+                else
+				    echo -e "$port80_status\t$current\t$resolved"
+				fi
+			else
+				if [ "$check_port80" != "YES" ] && [ "$print_line_numbers" != "YES" ] ; then
+                    if [ "$report_time_of_apache_visit" == "YES" ] ; then									
+                    	echo -e "$current_apache_visit_time\t$current\t$resolved"
+                    else
+	       				echo -e "$current\t$resolved"
+                    fi
+				fi
+			fi
+		fi
+	fi
+
+	(( host_num++ ))
+
+}
+
+function check_port80 {
+	# Determins the status of port 80
+	port80_status=""
+	resolved1=`echo $resolved | awk '{ print$1 }'`	
+	if [ "$resolved1" != "WARNING!" ] ; then
+		port80_status=`nmap -p80 -P0 $resolved1 2> /dev/null | grep "80/tcp" | awk '{print $2}'`
+	fi
+	if [ "$port80_status" == "" ] ; then
+		port80_status=`nmap -p80 -P0 $current 2> /dev/null | grep "80/tcp" | awk '{print $2}'`
+
+		if [ "$port80" == "" ] ; then
+			port80_status="down"
+		fi
+	fi
+	
+	if [ "$port80_status" == "filtered" ] ; then
+		port80_status="filt"
+	fi
+
+}
+
+
+
+
+## Logic
+if [ $# -gt 0 ] ; then
+    command_line_arguments_processed="YES"
+    if [ "$report_time_of_apache_visit" == "YES" ] ; then
+        report_time_of_apache_visit="NO"
+        re_enable_report_time_of_apache_visit="YES"
+    fi
+fi
+# Resolve any arguments
+while [ $# -gt 0 ] ; do 
+	current="${1}"
+	resolve_host
+	shift
+done
+if [ "$continue_processing_other_inputs_after_command_line_arguments" == "NO" ] && [ "$command_line_arguments_processed" == "YES" ] ; then
+    clean_exit
+fi
+if [ "$re_enable_report_time_of_apache_visit" == "YES" ] ; then
+    report_time_of_apache_visit="YES"
+fi
+
+
+
+
+
+# This will also read from standard in...but not quite how we want it to.....
+# Resolve any piped input
+#exec <&0
+#a1=start
+#read a1
+#while [ "$a1" != "" ] ; do
+#	current=$a1
+#	resolve_host
+#	read a1
+#done
+#
+
+
+if [ "$file_input" == "YES" ] ; then
+	if [ -f "$input_file" ] ; then
+		#set the input to the input file.
+		if [ "$unique_resolution" == "YES" ] ; then
+			# Configures Clean Up Traps
+			output_pid=$!
+			trap "{  clean_exit; }" EXIT
+			# Create the unique temp file to parse based upon the first column of the input file
+            touch "$temp_unique_file"
+            chmod 600 "$temp_unique_file"
+			`cat "$input_file" | awk '{ print $1 }' | uniq > "$temp_unique_file"`
+			if [ $? != 0 ] ; then
+				echo " ERROR! : Unable to generate unique temporary file"
+				exit_status=-1
+				clean_exit
+			fi 
+			exec < "$temp_unique_file"
+			
+			# If required add the last time entry for each unique visit and add this information to the log
+            if [ "$report_time_of_apache_visit" == "YES" ] ; then
+            
+                # Prepare the temp file
+                if [ -f "$temp_unique_file_with_apache_time" ] ; then
+                    rm -f "$temp_unique_file_with_apache_time"
+                    if [ $? != 0 ] ; then
+                        echo " ERROR! : Generate apache time temporary file"
+                        exit_status=-1
+        				clean_exit
+                    fi
+                fi
+            
+                # Configure Error Reporting
+                apache_time_error=0
+            
+                # Loop though the file
+                while true ; do
+                    read LINE || break
+                    search_key=$LINE
+                    # Search the logs for this key and grab the last assosiated time
+                    matching_apache_time=`grep "$search_key" "$input_file" | tail -n 1 | awk '{ print $4" "$5 }'`
+                    if [ $? != 0 ] ; then
+                        (( apache_time_error++ ))
+                    fi
+                    # Write out the line to the unique temporary file with apache time... this builds the file.
+                    `echo "$search_key $matching_apache_time" >> "$temp_unique_file_with_apache_time"`
+                    if [ $? != 0 ] ; then
+                        (( apache_time_error++ ))
+                    fi
+                done
+                if [ $apache_time_error != 0 ] ; then
+				    echo " ERROR! :  During consturction of unique temporary file with apache time"
+				    exit_status=-1
+				    clean_exit
+                fi 
+                exec < "$temp_unique_file_with_apache_time"
+            fi
+		else
+			# Not unique so just use the input file
+			exec < "$input_file"
+		fi
+	else
+		echo "ERROR! : Unable to read specified input file."	
+		echo "         Input file : $input_file"
+		exit -1
+	fi
+fi
+
+
+
+if [ "$standard_in" == "YES" ] || [ "$file_input" == "YES" ] ; then
+	# Read from standard in / file
+	while true ; do
+		read LINE || break
+		current=`echo $LINE | awk '{print $1}'`
+		
+		if [ "$report_time_of_apache_visit" == "YES" ] ; then
+            current_apache_visit_time=`echo $LINE | awk -F "[" '{ print $2 }' | awk -F "]" '{ print $1 }'`
+            current_apache_visit_time=`echo "$current_apache_visit_time" | awk '{ print $1$2 }'`        
+            if [ $host_num -eq 1 ] ; then
+                if [ "$current_apache_visit_time" == "" ] ; then 
+                    # If the first line includes no current_apache_visit_time then simply skip the rest,
+                    # This also skips reporting and formationg it is esentially the same as specifing  the
+                    # --noapachetime option on the command line.
+                    report_time_of_apache_visit="NO"
+                fi
+            fi
+        fi
+		#echo $current
+		resolve_host
+	done 
+fi
+
+
+
+
+clean_exit
+
+
